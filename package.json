@@ -1,0 +1,16 @@
+{
+  "name": "xtream-sports-stremio",
+  "version": "1.0.0",
+  "description": "Stremio addon that turns your personal Xtream Codes IPTV live channels + EPG into a matched sports events catalog",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "fast-levenshtein": "^3.0.0",
+    "lru-cache": "^10.4.3"
+  }
+}

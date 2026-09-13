@@ -1,0 +1,11 @@
+services:
+  xtream-sports-stremio:
+    build: .
+    ports:
+      - "7788:7788"
+    environment:
+      PORT: 7788
+      # Optional: your own TheSportsDB API key for faster/full broadcaster
+      # enrichment (leave unset to use the shared, rate-limited test key).
+      THESPORTSDB_API_KEY: ${THESPORTSDB_API_KEY:-}
+    restart: unless-stopped

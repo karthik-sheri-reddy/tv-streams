@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Configure My IPTV Sports</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #30363d; --text: #e6edf3;
+    --muted: #8b949e; --accent: #3fb950; --accent2: #58a6ff; --danger: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 32px 20px 80px; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .sub { color: var(--muted); margin-bottom: 28px; }
+  section { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 18px; }
+  section h2 { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 14px; }
+  label.field { display: block; margin-bottom: 12px; }
+  label.field span { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  input[type=text], input[type=password], input[type=url] {
+    width: 100%; padding: 9px 10px; background: #0d1117; border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); font-size: 14px;
+  }
+  input:focus { outline: none; border-color: var(--accent2); }
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .toggle-row:last-child { border-bottom: none; }
+  .toggle-row .desc { color: var(--muted); font-size: 13px; }
+  .switch { position: relative; width: 40px; height: 22px; flex: none; margin-left: 16px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; inset: 0; background: #30363d; border-radius: 22px; cursor: pointer; transition: .15s; }
+  .slider::before { content: ""; position: absolute; height: 16px; width: 16px; left: 3px; top: 3px; background: white; border-radius: 50%; transition: .15s; }
+  input:checked + .slider { background: var(--accent); }
+  input:checked + .slider::before { transform: translateX(18px); }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { padding: 7px 12px; border: 1px solid var(--border); border-radius: 20px; cursor: pointer; font-size: 13px; user-select: none; }
+  .chip.on { background: var(--accent); border-color: var(--accent); color: #04160a; font-weight: 600; }
+  select { width: 100%; padding: 9px 10px; background: #0d1117; border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 14px; }
+  button.primary { width: 100%; padding: 13px; background: var(--accent2); border: none; border-radius: 8px; color: #06121f; font-weight: 700; font-size: 15px; cursor: pointer; }
+  button.primary:disabled { opacity: 0.5; cursor: default; }
+  button.secondary { padding: 9px 14px; background: transparent; border: 1px solid var(--border); border-radius: 6px; color: var(--text); cursor: pointer; font-size: 13px; }
+  .status { margin-top: 10px; font-size: 13px; }
+  .status.ok { color: var(--accent); }
+  .status.err { color: var(--danger); }
+  .install-box { display: none; margin-top: 18px; }
+  .url-row { display: flex; gap: 8px; }
+  .url-row input { flex: 1; font-family: monospace; font-size: 12px; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .accordion { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+  .accordion:last-child { margin-bottom: 0; }
+  .accordion-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; cursor: pointer; user-select: none; background: #0d1117; }
+  .accordion-head .count { color: var(--accent); font-size: 12px; font-weight: 600; }
+  .accordion-head .caret { color: var(--muted); font-size: 12px; transition: transform .15s; }
+  .accordion.open .caret { transform: rotate(90deg); }
+  .accordion-body { display: none; padding: 12px 14px 14px; border-top: 1px solid var(--border); }
+  .accordion.open .accordion-body { display: block; }
+  .team-search { margin-bottom: 10px; }
+  .team-list { max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; }
+  .team-row { display: flex; align-items: center; gap: 9px; padding: 7px 10px; font-size: 13px; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .team-row:last-child { border-bottom: none; }
+  .team-row:hover { background: #1c2128; }
+  .team-row input { flex: none; }
+  .team-list .empty { padding: 14px 10px; color: var(--muted); font-size: 13px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>My IPTV Sports</h1>
+  <div class="sub">Turns your Xtream Codes IPTV live channels + EPG into a matched sports catalog for Stremio.</div>
+
+  <section>
+    <h2>Xtream Login</h2>
+    <label class="field"><span>Server URL</span><input type="url" id="server" placeholder="http://your-provider.com:80" /></label>
+    <label class="field"><span>Username</span><input type="text" id="username" autocomplete="off" /></label>
+    <label class="field"><span>Password</span><input type="password" id="password" autocomplete="off" /></label>
+    <button class="secondary" id="testBtn">Test connection</button>
+    <div class="status" id="testStatus"></div>
+  </section>
+
+  <section>
+    <h2>Preferences</h2>
+    <div class="toggle-row">
+      <div><div>Live matches only</div><div class="desc">Hide scheduled matches, show only what is live right now.</div></div>
+      <label class="switch"><input type="checkbox" id="liveOnly" /><span class="slider"></span></label>
+    </div>
+    <div class="toggle-row">
+      <div><div>Hide titles</div><div class="desc">Show posters only, generic sport label instead of matchup names.</div></div>
+      <label class="switch"><input type="checkbox" id="hideTitles" /><span class="slider"></span></label>
+    </div>
+    <div class="toggle-row">
+      <div><div>Hide descriptions</div><div class="desc">Hide the description text under catalog cards.</div></div>
+      <label class="switch"><input type="checkbox" id="hideDescriptions" /><span class="slider"></span></label>
+    </div>
+  </section>
+
+  <section>
+    <h2>Sports</h2>
+    <div class="desc" style="margin-bottom:12px;color:var(--muted);font-size:13px;">Tap sports to show only those in your catalogs. Tap again to deselect. If none selected, all sports are shown.</div>
+    <div class="chips" id="sportChips"></div>
+  </section>
+
+  <section>
+    <h2>Timezone</h2>
+    <select id="timezone"></select>
+    <div class="hint">Applied to match kickoff times shown on catalog cards.</div>
+  </section>
+
+  <section>
+    <h2>Upcoming Window</h2>
+    <select id="upcomingWindow"></select>
+    <div class="hint">Show a match this far ahead of kickoff, in addition to whatever's live right now.</div>
+  </section>
+
+  <section>
+    <h2>Favorite Teams</h2>
+    <div class="desc" style="margin-bottom:12px;color:var(--muted);font-size:13px;">Pick your teams per league to unlock a "Favorites" filter on that league's catalog in Stremio.</div>
+    <div id="favoriteLeagues"></div>
+  </section>
+
+  <button class="primary" id="generateBtn">Generate install link</button>
+
+  <div class="install-box" id="installBox">
+    <div class="url-row">
+      <input type="text" id="manifestUrl" readonly />
+      <button class="secondary" id="copyBtn">Copy</button>
+    </div>
+    <a id="installLink" href="#"><button class="primary" style="margin-top:10px;">Install in Stremio</button></a>
+  </div>
+</div>
+
+<script>
+const SPORTS_FALLBACK = ['American Football','NCAAF','NBA','NCAAB','Football','Hockey','Baseball','Motor Sports','Fight','Tennis','Rugby','Golf','Billiards','AFL','Darts','Cricket','Other'];
+const selectedSports = new Set();
+
+async function loadSports() {
+  let sports = SPORTS_FALLBACK;
+  try {
+    const res = await fetch('/api/sports');
+    if (res.ok) sports = await res.json();
+  } catch (e) {}
+  const box = document.getElementById('sportChips');
+  box.innerHTML = '';
+  for (const s of sports) {
+    const chip = document.createElement('div');
+    chip.className = 'chip';
+    chip.textContent = s;
+    chip.onclick = () => {
+      if (selectedSports.has(s)) { selectedSports.delete(s); chip.classList.remove('on'); }
+      else { selectedSports.add(s); chip.classList.add('on'); }
+    };
+    box.appendChild(chip);
+  }
+}
+
+const TIMEZONES_FALLBACK = [
+  { value: 'Pacific/Honolulu', label: 'Hawaii Time (Honolulu)' },
+  { value: 'America/Anchorage', label: 'Alaska Time (Anchorage)' },
+  { value: 'America/Los_Angeles', label: 'Pacific Time (Los Angeles)' },
+  { value: 'America/Denver', label: 'Mountain Time (Denver)' },
+  { value: 'America/Chicago', label: 'Central Time (Chicago)' },
+  { value: 'America/New_York', label: 'Eastern Time (New York)' },
+  { value: 'UTC', label: 'UTC' },
+  { value: 'Europe/London', label: 'UK Time (London)' },
+  { value: 'Europe/Paris', label: 'Central European Time (Paris)' },
+];
+
+async function loadTimezones() {
+  let zones = TIMEZONES_FALLBACK;
+  try {
+    const res = await fetch('/api/timezones');
+    if (res.ok) zones = await res.json();
+  } catch (e) {}
+
+  const sel = document.getElementById('timezone');
+  sel.innerHTML = '';
+  let browserZone = 'UTC';
+  try { browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) {}
+
+  // If the browser's own zone isn't in the curated list, add it so a visitor
+  // outside these ~20 regions still sees their own zone as an option.
+  if (!zones.some((z) => z.value === browserZone)) {
+    zones = [{ value: browserZone, label: `Your device timezone (${browserZone})` }, ...zones];
+  }
+
+  for (const z of zones) {
+    const opt = document.createElement('option');
+    opt.value = z.value; opt.textContent = z.label;
+    if (z.value === browserZone) opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+
+async function loadUpcomingWindow() {
+  let limits = { min: 0.5, max: 24, default: 3 };
+  try {
+    const res = await fetch('/api/upcoming-window-limits');
+    if (res.ok) limits = await res.json();
+  } catch (e) {}
+
+  const options = [0.5, 1, 2, 3, 4, 6, 8, 12, 24].filter((h) => h >= limits.min && h <= limits.max);
+  if (!options.includes(limits.default)) options.push(limits.default);
+  options.sort((a, b) => a - b);
+
+  const sel = document.getElementById('upcomingWindow');
+  sel.innerHTML = '';
+  for (const h of options) {
+    const opt = document.createElement('option');
+    opt.value = h;
+    opt.textContent = h < 1 ? `${h * 60} minutes` : h === 1 ? '1 hour' : `${h} hours`;
+    if (h === limits.default) opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+
+const FAVORITE_LEAGUES = ['American Football', 'NCAAF', 'NBA', 'NCAAB'];
+const favoriteTeams = {}; // league -> Set(team name)
+const teamListCache = {}; // league -> [{id,name,logo}] (fetched lazily on first expand)
+for (const league of FAVORITE_LEAGUES) favoriteTeams[league] = new Set();
+
+function updateFavoriteCount(league) {
+  const el = document.querySelector(`.accordion[data-league="${league}"] .count`);
+  const n = favoriteTeams[league].size;
+  el.textContent = n ? `${n} selected` : '';
+}
+
+function renderTeamList(league, teams, filter) {
+  const list = document.querySelector(`.accordion[data-league="${league}"] .team-list`);
+  const q = (filter || '').trim().toLowerCase();
+  const filtered = q ? teams.filter((t) => t.name.toLowerCase().includes(q)) : teams;
+  list.innerHTML = '';
+  if (!filtered.length) {
+    list.innerHTML = '<div class="empty">No teams match your search.</div>';
+    return;
+  }
+  for (const team of filtered) {
+    const row = document.createElement('label');
+    row.className = 'team-row';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = favoriteTeams[league].has(team.name);
+    cb.onchange = () => {
+      if (cb.checked) favoriteTeams[league].add(team.name);
+      else favoriteTeams[league].delete(team.name);
+      updateFavoriteCount(league);
+    };
+    const span = document.createElement('span');
+    span.textContent = team.name;
+    row.appendChild(cb);
+    row.appendChild(span);
+    list.appendChild(row);
+  }
+}
+
+async function loadFavoriteLeagues() {
+  const box = document.getElementById('favoriteLeagues');
+  box.innerHTML = '';
+  for (const league of FAVORITE_LEAGUES) {
+    const acc = document.createElement('div');
+    acc.className = 'accordion';
+    acc.dataset.league = league;
+    acc.innerHTML = `
+      <div class="accordion-head">
+        <div>${league}</div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span class="count"></span>
+          <span class="caret">▶</span>
+        </div>
+      </div>
+      <div class="accordion-body">
+        <input class="team-search" type="text" placeholder="Search ${league} teams..." />
+        <div class="team-list"><div class="empty">Loading teams...</div></div>
+      </div>`;
+    box.appendChild(acc);
+
+    const head = acc.querySelector('.accordion-head');
+    const search = acc.querySelector('.team-search');
+
+    head.onclick = async () => {
+      acc.classList.toggle('open');
+      if (!acc.classList.contains('open')) return;
+      if (!teamListCache[league]) {
+        try {
+          const res = await fetch(`/api/teams/${encodeURIComponent(league)}`);
+          teamListCache[league] = res.ok ? await res.json() : [];
+        } catch (e) {
+          teamListCache[league] = [];
+        }
+      }
+      renderTeamList(league, teamListCache[league], search.value);
+    };
+
+    search.oninput = () => renderTeamList(league, teamListCache[league] || [], search.value);
+  }
+}
+
+function getXtreamFields() {
+  return {
+    server: document.getElementById('server').value.trim(),
+    username: document.getElementById('username').value.trim(),
+    password: document.getElementById('password').value.trim(),
+  };
+}
+
+document.getElementById('testBtn').onclick = async () => {
+  const statusEl = document.getElementById('testStatus');
+  statusEl.className = 'status'; statusEl.textContent = 'Testing...';
+  try {
+    const res = await fetch('/api/test-connection', {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(getXtreamFields())
+    });
+    const data = await res.json();
+    if (data.ok) {
+      statusEl.className = 'status ok';
+      statusEl.textContent = `Connected. Account status: ${data.status}`;
+    } else {
+      statusEl.className = 'status err';
+      statusEl.textContent = data.error || 'Connection failed';
+    }
+  } catch (e) {
+    statusEl.className = 'status err';
+    statusEl.textContent = 'Connection failed: ' + e.message;
+  }
+};
+
+document.getElementById('generateBtn').onclick = async () => {
+  const cfg = {
+    ...getXtreamFields(),
+    liveOnly: document.getElementById('liveOnly').checked,
+    hideTitles: document.getElementById('hideTitles').checked,
+    hideDescriptions: document.getElementById('hideDescriptions').checked,
+    sports: Array.from(selectedSports),
+    timezone: document.getElementById('timezone').value,
+    upcomingWindowHours: parseFloat(document.getElementById('upcomingWindow').value) || 3,
+    favoriteTeams: Object.fromEntries(FAVORITE_LEAGUES.map((l) => [l, Array.from(favoriteTeams[l])])),
+  };
+  if (!cfg.server || !cfg.username || !cfg.password) {
+    alert('Please fill in your Xtream server, username and password first.');
+    return;
+  }
+  const res = await fetch('/api/encode-config', {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(cfg)
+  });
+  const data = await res.json();
+  if (!res.ok) { alert(data.error || 'Failed to generate config'); return; }
+
+  const manifestUrl = `${location.origin}/${data.config}/manifest.json`;
+  document.getElementById('manifestUrl').value = manifestUrl;
+  document.getElementById('installLink').href = `stremio://${manifestUrl.replace(/^https?:\/\//, '')}`;
+  document.getElementById('installBox').style.display = 'block';
+};
+
+document.getElementById('copyBtn').onclick = () => {
+  const input = document.getElementById('manifestUrl');
+  input.select();
+  navigator.clipboard.writeText(input.value);
+};
+
+loadSports();
+loadTimezones();
+loadUpcomingWindow();
+loadFavoriteLeagues();
+</script>
+</body>
+</html>
