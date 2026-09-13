@@ -24,12 +24,17 @@ sourced from your own panel instead of a third-party feed.
    EPG lookup is purely a backend aid for *finding* matchup text on channels
    whose own name is just a brand ("beIN Sports 1") - it never feeds the
    displayed schedule/live status, and nothing EPG-derived is shown as-is.
-4. Matchups are cleaned of broadcaster/date/league noise, then grouped: the
-   same real game is almost always listed on many channels (different
-   languages, qualities, backup feeds, sometimes with home/away reversed)
-   - these get merged into one catalog entry with every underlying stream as
-   a selectable source, using fuzzy (Levenshtein) name matching that's aware
-   of which side is which even when a source lists the teams in swapped order.
+4. Matchups are cleaned of broadcaster/date/league noise - including a
+   leading AP-poll ranking marker on college sources ("#1 Ohio State vs. #4
+   Texas" -> "Ohio State" / "Texas"), since left in, it corrupts the
+   normalized name enough to dodge grouping with every unranked source for
+   the same game and fail to match ESPN's own (unranked) team name entirely -
+   then grouped: the same real game is almost always listed on many channels
+   (different languages, qualities, backup feeds, sometimes with home/away
+   reversed) - these get merged into one catalog entry with every underlying
+   stream as a selectable source, using fuzzy (Levenshtein) name matching
+   that's aware of which side is which even when a source lists the teams in
+   swapped order.
 5. Anything sport-category but not matchup-shaped (a linear network like
    ESPN or beIN Sport) still shows up, just as a plain channel instead of an
    event card.
@@ -104,6 +109,24 @@ stays correct across a DST transition instead of drifting an hour twice a year.
    the window only decides when the *event card* enters your catalog, not
    whether this channel counts as one of its sources).
 
+   Broadcast-affiliate categories (a panel's "US Local - CBS/NBC/FOX/ABC/PBS",
+   "Local Channels", or a country's "Regional" bucket - often 1,000+
+   individual stations, one per TV market) are a step further out: unlike a
+   category actually named "NFL", a *local* category's own name says nothing
+   about sports - a given station spends most of a day on local news, not a
+   game. So these categories aren't walked in wholesale (that would flood
+   every sport's plain channel list with idle stations most of the day).
+   Instead, each individual stream in one of these categories only enters the
+   matching pipeline at all when its own live EPG programme currently reads
+   as sports content - the same generic-label-plus-venue signal from the
+   paragraph above. In practice this surfaces a real, previously-invisible
+   class of sources: dozens of ABC/CBS/FOX affiliates nationwide correctly
+   attach themselves as extra sources on the one game they're each currently
+   broadcasting, verified against a live Ohio State @ Texas broadcast where
+   this added 70+ ABC-affiliate sources to a single event that ESPN and
+   channel-name matching alone had already found only a handful of sources
+   for.
+
    Whatever's left unmatched is then judged on whether it names a specific
    team at all. For NFL/NCAAF/NBA/NCAAB, every channel is checked against
    that league's full ESPN roster (recognizing the team by its nickname -
@@ -119,12 +142,24 @@ stays correct across a DST transition instead of drifting an hour twice a year.
    placeholder noise ("No Event", "No Scheduled Event", a bare "NCAAB 14",
    "TENNIS TV - EVENT 3") is dropped too.
 
-9. Once a group has more than one source, they're sorted best quality first
-   in the Stremio source picker (`[4K]`/`[FHD]`/`[HD]`/`[SD]` tags shown on
-   the title) - detected from each channel's raw, unstripped name, including
-   the stylized unicode quality markers (ᵁᴴᴰ, ᴴᴰ) some panels use instead of
-   plain ASCII. A source with no detectable quality tag sorts after the ones
-   that have one, rather than displacing them.
+9. Once a group has more than one source, they're ranked for the Stremio
+   source picker (`[4K]`/`[FHD]`/`[HD]`/`[SD]` tags shown on the title,
+   detected from each channel's raw, unstripped name, including the stylized
+   unicode quality markers - ᵁᴴᴰ, ᴴᴰ - some panels use instead of plain ASCII)
+   and capped at **10 sources per event**. A big national broadcast can
+   attach 50+ near-identical local-affiliate duplicates (point 8 above) -
+   past a handful, more local affiliates of the *same* broadcast add nothing,
+   so real/national sources (DAZN, PRIME, Disney+, a plain network feed) rank
+   ahead of local-affiliate duplicates as a group, best quality first within
+   each group; a source with no detectable quality tag sorts after ones that
+   have one rather than displacing them.
+
+   Before the final 10 are handed to Stremio, each ranked candidate is
+   live-checked (a quick fetch confirming its playlist actually loads - an
+   IPTV panel routinely has a few dead or expired feeds mixed in with the
+   working ones) and a source that fails is silently skipped in favor of the
+   next-ranked one, so a handful of dead links near the top can't crowd out
+   otherwise-good sources ranked just behind them.
 
 This is text-based heuristic matching for *finding and grouping* matchups,
 backed by a real schedule for deciding *whether to show them* - not a
@@ -156,12 +191,12 @@ refuses to load any *external* resource referenced from inside it, so a
 plain `<image href="https://...">` would just render blank; embedding the
 bytes sidesteps that restriction entirely.
 
-For NFL, NCAAF, NBA and NCAAB, `/configure` has a **Favorite Teams** picker
-(searchable, since NCAAF/NCAAB run into the hundreds of schools) - pick your
-teams there and that league's Stremio catalog gains a "Favorites" genre
-option, filtering the row down to just games involving one of your teams. A
-league with no favorites picked skips the option entirely rather than
-offering a filter that would always return nothing.
+For NFL, NCAAF, NBA, NCAAB, NHL and MLB, `/configure` has a **Favorite
+Teams** picker (searchable, since NCAAF/NCAAB run into the hundreds of
+schools) - pick your teams there and that league's Stremio catalog gains a
+"Favorites" genre option, filtering the row down to just games involving one
+of your teams. A league with no favorites picked skips the option entirely
+rather than offering a filter that would always return nothing.
 
 ## Setup
 
@@ -177,6 +212,32 @@ link** → **Install in Stremio**.
 Nothing is stored server-side - all settings (including your Xtream login)
 are encoded into the addon's own install URL, exactly like the reference
 addon does.
+
+## Playback: direct vs. proxied
+
+By default, playback connects straight from Stremio to your Xtream server -
+the addon only ever hands back the stream's real URL, so no video passes
+through it. Turning on **Proxy playback through this server** in
+`/configure` changes that: the addon fetches the HLS playlist itself,
+rewrites every segment/key/variant-playlist reference in it to route back
+through the addon, and relays each request to the real origin server-side.
+Every viewer then reaches your IPTV provider from the addon's single IP,
+regardless of what network they're actually on.
+
+This is implemented as a token-based rewriting proxy (`src/proxy/hlsProxy.js`
++ the `/proxy/pl/:token` and `/proxy/seg/:token` routes in `src/server.js`) -
+a client is never allowed to hand the proxy an arbitrary URL to fetch (that
+would make it an open relay); every URL it can reach was one the addon
+itself already fetched and mapped to a short-lived random token. It also
+follows the 302 redirect Xtream panels commonly issue to a separate CDN host
+before resolving any relative segment paths in the response, since those
+paths are relative to the redirected URL, not the one originally requested.
+
+The real cost: this server's bandwidth and CPU carry the full video bitrate
+for every concurrent stream instead of Stremio talking to your provider
+directly, and it adds a network hop of latency. Leave it off unless you
+specifically need all playback to originate from one address - it's off by
+default for exactly that reason.
 
 ## Deploying with Docker / Coolify
 

@@ -61,8 +61,23 @@ function trimTrailingNoise(side) {
     .trim();
 }
 
+// Ranked-team markers ("#1 Ohio State vs. #4 Texas", "#13 Texas Tech") are
+// common on college sports feeds - left in, they corrupt the normalized key
+// ("1 ohio state" instead of "ohio state"), which silently fails to group
+// with every OTHER source for the same game that didn't carry a ranking
+// prefix (or carried a different one, if the ranking changed week to week),
+// and just as importantly fails to match ESPN's own (unranked) team name -
+// splitting one real game into a visible, ESPN-matched entry and a second,
+// invisible, permanently-unmatched duplicate holding otherwise-legitimate
+// extra sources hostage.
+const RANK_PREFIX_RE = /^#\s*\d{1,3}\s*/;
+
 function trimLeadingNoise(side) {
-  return side.replace(/^[\s:@|.\-]+/, '').trim();
+  return side
+    .replace(/^[\s:@|.\-]+/, '')
+    .replace(RANK_PREFIX_RE, '')
+    .replace(/^[\s:@|.\-]+/, '')
+    .trim();
 }
 
 // EPG/channel titles often glue a competition/round qualifier onto one side
@@ -96,8 +111,13 @@ function tryParse(candidate) {
   if (!m) return null;
   const rawA = trimLeadingNoise(trimTrailingNoise(m[1]));
   const rawB = trimLeadingNoise(trimTrailingNoise(m[2]));
-  const teamA = stripQualifierSegment(rawA);
-  const teamB = stripQualifierSegment(rawB);
+  // stripQualifierSegment can surface the ranked team name from a dash-
+  // chained qualifier ("NCAA - Football - #1 Ohio State") only after the
+  // "NCAA"/"Football" parts are dropped - the "#1" is in the middle of the
+  // pre-split string at that point, past where trimLeadingNoise's own
+  // rank-prefix strip could reach, so it needs a second pass here too.
+  const teamA = stripQualifierSegment(rawA).replace(RANK_PREFIX_RE, '').trim();
+  const teamB = stripQualifierSegment(rawB).replace(RANK_PREFIX_RE, '').trim();
   if (looksLikePlaceholder(teamA) || looksLikePlaceholder(teamB)) return null;
   if (teamA.toLowerCase() === teamB.toLowerCase()) return null;
   // Keep the pre-strip text around too: the stripped-out qualifier

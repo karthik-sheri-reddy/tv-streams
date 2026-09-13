@@ -91,6 +91,7 @@ function normalizeConfig(cfg) {
     liveOnly: !!cfg.liveOnly,
     hideTitles: !!cfg.hideTitles,
     hideDescriptions: !!cfg.hideDescriptions,
+    proxyStreams: !!cfg.proxyStreams,
     sports, // empty = all sports
     timezone: isValidTimezone(cfg.timezone) ? cfg.timezone : DEFAULT_TIMEZONE,
     upcomingWindowHours,

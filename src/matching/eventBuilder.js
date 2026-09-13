@@ -6,6 +6,18 @@ const { getSchedule, getTeams } = require('../espn/client');
 const { getEpg, currentProgramme } = require('../xtream/epg');
 const { getBroadcastChannelNames } = require('../sportsdb/client');
 
+// Local/regional broadcast-affiliate categories ("|US| ★ LOCAL - CBS",
+// "|CA| ★ LOCALS CH", "|DE| ★ REGIONAL") bundle hundreds of individual
+// network affiliates (one per market) whose *category* name says nothing
+// about sports - a given affiliate airs local news and syndicated shows most
+// of the day, a game only during its actual broadcast window. Classifying
+// the whole category as sport content the way a category literally named
+// "NFL" is would flood every sport's plain channel list with idle local
+// stations the other 20 hours of the day - see the per-stream EPG check in
+// buildRawItems below, which only pulls one of these in when its own live
+// programme currently reads as sports content.
+const LOCAL_BROADCAST_CATEGORY_RE = /\blocal(s)?\b|\bregional(i)?\b/i;
+
 const UPCOMING_WINDOW_MS = 3 * 60 * 60 * 1000;
 // Guards against fuzzy-matching two different fixtures between the same
 // pair of teams played on different days (rare, but rivalries repeat).
@@ -33,7 +45,9 @@ async function buildRawItems(xtreamClient) {
   ]);
 
   const categorySport = new Map();
+  const categoryName = new Map();
   for (const c of categories) {
+    categoryName.set(String(c.category_id), c.category_name || '');
     const sport = classifyCategory(c.category_name);
     if (sport) categorySport.set(String(c.category_id), sport);
   }
@@ -42,7 +56,23 @@ async function buildRawItems(xtreamClient) {
   const items = [];
 
   for (const s of streams) {
-    const catSport = categorySport.get(String(s.category_id));
+    const catIdKey = String(s.category_id);
+    let catSport = categorySport.get(catIdKey);
+    let prog = null;
+
+    // See LOCAL_BROADCAST_CATEGORY_RE above - a local-affiliate category has
+    // no category-level sport, so each stream in it only earns one from its
+    // own live EPG programme (classifyCategory doubles as a general text
+    // classifier here, giving the same specific-sport/'Other'/null cascade
+    // a category name would get). viaLocalCategory is carried onto the item
+    // itself (see `local:` below) so a big national broadcast that ends up
+    // with 50+ identical local-affiliate duplicates can be ranked behind its
+    // "real" sources instead of burying them.
+    const viaLocalCategory = !catSport && !!s.epg_channel_id && LOCAL_BROADCAST_CATEGORY_RE.test(categoryName.get(catIdKey) || '');
+    if (viaLocalCategory) {
+      prog = currentProgramme(epg, s.epg_channel_id, now);
+      if (prog) catSport = classifyCategory(`${prog.title} ${prog.desc || ''}`);
+    }
     if (!catSport) continue;
 
     const cleanedName = stripNoise(s.name || '');
@@ -50,7 +80,7 @@ async function buildRawItems(xtreamClient) {
     let sportHintText = cleanedName;
 
     if (!matchup && s.epg_channel_id) {
-      const prog = currentProgramme(epg, s.epg_channel_id, now);
+      prog = prog || currentProgramme(epg, s.epg_channel_id, now);
       if (prog) {
         matchup = extractMatchup(stripNoise(prog.title));
         if (matchup) sportHintText = `${prog.title} ${cleanedName}`;
@@ -71,6 +101,7 @@ async function buildRawItems(xtreamClient) {
         icon: s.stream_icon || null,
         sourceName: cleanedName || s.name,
         quality: detectQualityRank(s.name),
+        local: viaLocalCategory,
       });
     } else {
       // No matchup anywhere (name or EPG) - this channel is either a real
@@ -83,16 +114,26 @@ async function buildRawItems(xtreamClient) {
       // available, since nothing else keeps raw EPG text around.
       let epgText = '';
       if (s.epg_channel_id) {
-        const prog = currentProgramme(epg, s.epg_channel_id, now);
+        prog = prog || currentProgramme(epg, s.epg_channel_id, now);
         if (prog) epgText = `${prog.title} ${prog.desc || ''}`.trim();
       }
+      // A category only known to be "generic sports" (Other - a DAZN/bein/
+      // Paramount+ brand category, or a local affiliate one per above) says
+      // nothing about which SPECIFIC sport this channel's current programme
+      // is. Left at 'Other', this channel could never attach to a real event
+      // below (every visible event carries the specific sport ESPN
+      // confirmed, and that match is sport-gated) even when its own live EPG
+      // text is specific ("College Football", "NHL Hockey") - so it gets one
+      // more classification attempt here before falling back.
+      const resolvedSport = sport === 'Other' && epgText ? classifyCategory(epgText) || sport : sport;
       items.push({
         type: 'channel',
-        sport,
+        sport: resolvedSport,
         name: cleanedName || s.name,
         streamId: s.stream_id,
         icon: s.stream_icon || null,
         quality: detectQualityRank(s.name),
+        local: viaLocalCategory,
         epgText,
       });
     }
@@ -154,7 +195,7 @@ function groupEvents(eventItems) {
       if (itemB.length < group.teamB.length) group.teamB = itemB;
     }
 
-    group.sources.push({ streamId: item.streamId, icon: item.icon, label: item.sourceName, quality: item.quality });
+    group.sources.push({ streamId: item.streamId, icon: item.icon, label: item.sourceName, quality: item.quality, local: !!item.local });
   }
 
   return groups.map((g) => ({
@@ -230,12 +271,19 @@ function isVisibleNow(ev, now = Date.now(), windowMs = UPCOMING_WINDOW_MS) {
   return false; // 'unknown' (no ESPN match) or 'ended'
 }
 
-// Best quality first (4K/UHD, then FHD, then HD, then SD, then unrated) for
-// the Stremio source picker - a stable sort, so sources tied on quality (most
-// of them, since many sources never had a quality tag to detect) keep
-// whatever order they were discovered in rather than shuffling arbitrarily.
-function sortSourcesByQuality(sources) {
-  return [...sources].sort((a, b) => (b.quality || 0) - (a.quality || 0));
+// Ranks an event's sources for the Stremio source picker: real/national
+// broadcasts before local-affiliate duplicates of the exact same broadcast
+// (a big national game can attach 50+ identical ABC/CBS/FOX affiliates - see
+// the local-broadcast-category handling in buildRawItems/enrichAndFilterChannels
+// - which are only worth keeping as a last-resort backup, not the top picks),
+// then best quality first (4K/UHD, then FHD, then HD, then SD, then unrated)
+// within each group. A stable sort, so ties keep discovery order rather than
+// shuffling arbitrarily.
+function rankSources(sources) {
+  return [...sources].sort((a, b) => {
+    const localDiff = (a.local ? 1 : 0) - (b.local ? 1 : 0);
+    return localDiff !== 0 ? localDiff : (b.quality || 0) - (a.quality || 0);
+  });
 }
 
 // Matches broadcaster names (from wherever) against the user's own plain
@@ -251,7 +299,7 @@ function attachMatchingChannelSources(ev, broadcastNames, channels) {
       (c) => !haveStreamIds.has(c.streamId) && brandMatch(normalizeKey(c.name), nameKey, BROADCAST_MATCH_THRESHOLD)
     );
     if (match) {
-      ev.sources.push({ streamId: match.streamId, icon: match.icon, label: match.name, quality: match.quality });
+      ev.sources.push({ streamId: match.streamId, icon: match.icon, label: match.name, quality: match.quality, local: !!match.local });
       haveStreamIds.add(match.streamId);
     }
   }
@@ -417,7 +465,7 @@ async function enrichAndFilterChannels(events, channels) {
     );
 
     if (target) {
-      target.sources.push({ streamId: ch.streamId, icon: ch.icon, label: ch.name, quality: ch.quality });
+      target.sources.push({ streamId: ch.streamId, icon: ch.icon, label: ch.name, quality: ch.quality, local: !!ch.local });
       continue; // now surfaced as an event source - not also listed standalone
     }
 
@@ -459,5 +507,5 @@ module.exports = {
   isVisibleNow,
   applyEspnSchedule,
   findEspnMatch,
-  sortSourcesByQuality,
+  rankSources,
 };

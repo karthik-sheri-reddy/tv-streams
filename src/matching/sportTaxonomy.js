@@ -26,7 +26,7 @@ const PRIORITY_SPORTS = ['American Football', 'NCAAF', 'NBA', 'NCAAB'];
 
 // Leagues the /configure "Favorite Teams" picker offers, and the ones whose
 // per-sport catalog gets a "Favorites" genre option (see stremio/manifest.js).
-const FAVORITE_TEAM_SPORTS = ['American Football', 'NCAAF', 'NBA', 'NCAAB'];
+const FAVORITE_TEAM_SPORTS = ['American Football', 'NCAAF', 'NBA', 'NCAAB', 'Hockey', 'Baseball'];
 
 // Each sport gets its own Stremio catalog (see stremio/manifest.js) rather
 // than one shared catalog filtered by a "genre" extra - these convert

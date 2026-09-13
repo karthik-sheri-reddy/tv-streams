@@ -19,11 +19,12 @@ const {
   sortEvents,
 } = require('./stremio/metas');
 const { SPORTS, sportFromSlug } = require('./matching/sportTaxonomy');
-const { isVisibleNow, sortSourcesByQuality } = require('./matching/eventBuilder');
+const { isVisibleNow, rankSources } = require('./matching/eventBuilder');
 const { getTeams } = require('./espn/client');
 const { similarity } = require('./matching/fuzzy');
 const { normalizeKey } = require('./matching/nameParser');
 const { buildPosterSvg } = require('./stremio/poster');
+const { mintToken, resolveToken, rewritePlaylist, UPSTREAM_HEADERS } = require('./proxy/hlsProxy');
 
 const PORT = process.env.PORT || 7788;
 const PAGE_SIZE = 100;
@@ -106,6 +107,58 @@ app.get('/poster/event.svg', async (req, res) => {
   res.set('Content-Type', 'image/svg+xml');
   res.set('Cache-Control', 'public, max-age=600');
   res.send(svg);
+});
+
+// Optional HLS-proxying (config.proxyStreams): when enabled, playback is
+// routed through this server instead of connecting to the Xtream server
+// directly, so every viewer looks like the same source IP/network to the
+// provider regardless of where they actually are. Off by default - it turns
+// this server's bandwidth into the playback bottleneck instead of the
+// provider's, for every concurrent stream.
+function proxyPlaylistUrl(realUrl, proxyOrigin) {
+  return `${proxyOrigin}/proxy/pl/${mintToken(realUrl)}`;
+}
+
+app.get('/proxy/pl/:token', async (req, res) => {
+  const url = resolveToken(req.params.token);
+  if (!url) return res.status(410).send('Expired');
+  try {
+    const upstream = await fetch(url, { headers: UPSTREAM_HEADERS, signal: AbortSignal.timeout(15000) });
+    if (!upstream.ok) return res.status(502).send('Upstream error');
+    const text = await upstream.text();
+    const proxyOrigin = `${req.protocol}://${req.get('host')}`;
+    res.set('Content-Type', 'application/vnd.apple.mpegurl');
+    res.set('Cache-Control', 'no-store');
+    // Xtream panels commonly 302 the playlist request to a separate CDN host
+    // carrying a session token; relative segment paths in the playlist body
+    // are relative to THAT final URL, not the one we originally requested -
+    // resolving against the pre-redirect URL would silently point every
+    // segment back at the wrong host.
+    res.send(rewritePlaylist(text, upstream.url, proxyOrigin));
+  } catch (err) {
+    res.status(502).send('Proxy error: ' + err.message);
+  }
+});
+
+app.get('/proxy/seg/:token', async (req, res) => {
+  const url = resolveToken(req.params.token);
+  if (!url) return res.status(410).send('Expired');
+  try {
+    const headers = { ...UPSTREAM_HEADERS };
+    if (req.headers.range) headers.Range = req.headers.range;
+    const upstream = await fetch(url, { headers, signal: AbortSignal.timeout(20000) });
+    res.status(upstream.status);
+    for (const h of ['content-type', 'content-length', 'content-range']) {
+      const v = upstream.headers.get(h);
+      if (v) res.set(h, v);
+    }
+    res.set('Accept-Ranges', 'bytes');
+    if (!upstream.body) return res.end();
+    const { Readable } = require('stream');
+    Readable.fromWeb(upstream.body).pipe(res);
+  } catch (err) {
+    res.status(502).send('Proxy error: ' + err.message);
+  }
 });
 
 // Validates Xtream creds live from the configure page before install.
@@ -253,6 +306,38 @@ app.get('/:config/meta/:type/:id.json', async (req, res) => {
   }
 });
 
+// A big national broadcast can attach 50+ near-identical local-affiliate
+// duplicates (see the local-broadcast-category handling in eventBuilder.js) -
+// Stremio's source picker isn't useful past a handful of choices, so the
+// list is capped, ranked non-local/quality-first (rankSources), and each
+// candidate is live-checked before being counted: an IPTV panel routinely has
+// a few dead/expired feeds mixed in with the working ones, and a source that
+// won't resolve is worse than no source at all. SOURCE_CHECK_POOL bounds how
+// many ranked candidates get checked (rather than just the top MAX), so a
+// handful of dead sources near the top doesn't leave the list short of
+// MAX_SOURCES_PER_EVENT when perfectly good ones were ranked just behind them.
+const MAX_SOURCES_PER_EVENT = 10;
+const SOURCE_CHECK_POOL = 20;
+
+async function streamResolves(url) {
+  try {
+    const res = await fetch(url, { headers: UPSTREAM_HEADERS, signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return false;
+    const text = await res.text();
+    return text.trimStart().startsWith('#EXTM3U');
+  } catch {
+    return false;
+  }
+}
+
+async function pickViableSources(client, sources, max = MAX_SOURCES_PER_EVENT) {
+  const ranked = rankSources(sources).slice(0, Math.max(max, SOURCE_CHECK_POOL));
+  const checked = await Promise.all(
+    ranked.map(async (src) => ({ src, ok: await streamResolves(client.buildStreamUrl(src.streamId, 'm3u8')) }))
+  );
+  return checked.filter((c) => c.ok).map((c) => c.src).slice(0, max);
+}
+
 app.get('/:config/stream/:type/:id.json', async (req, res) => {
   const config = loadConfig(req, res);
   if (!config) return;
@@ -261,14 +346,20 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
   try {
     const client = new XtreamClient(config);
     const data = await getCatalogData(client);
+    const proxyOrigin = `${req.protocol}://${req.get('host')}`;
+    const streamUrl = (streamId) => {
+      const real = client.buildStreamUrl(streamId, 'm3u8');
+      return config.proxyStreams ? proxyPlaylistUrl(real, proxyOrigin) : real;
+    };
 
     if (id.startsWith('xiptv-event-')) {
       const hash = id.slice('xiptv-event-'.length);
       const ev = data.events.find((e) => e.id === hash);
       if (!ev) return res.json({ streams: [] });
-      const streams = sortSourcesByQuality(ev.sources).map((src) => ({
+      const viable = await pickViableSources(client, ev.sources);
+      const streams = viable.map((src) => ({
         title: `${QUALITY_TAGS[src.quality] || ''}${src.label || `Source ${src.streamId}`}`,
-        url: client.buildStreamUrl(src.streamId, 'm3u8'),
+        url: streamUrl(src.streamId),
       }));
       return res.json({ streams });
     }
@@ -277,7 +368,7 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
       const ch = data.channels.find((c) => c.id === hash);
       if (!ch) return res.json({ streams: [] });
       return res.json({
-        streams: [{ title: ch.name, url: client.buildStreamUrl(ch.streamId, 'm3u8') }],
+        streams: [{ title: ch.name, url: streamUrl(ch.streamId) }],
       });
     }
     res.json({ streams: [] });

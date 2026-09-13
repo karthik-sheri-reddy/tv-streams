@@ -140,16 +140,20 @@ async function getSchedule() {
   }
 }
 
-// Team rosters for the /configure "Favorite Teams" pickers - only the four
+// Team rosters for the /configure "Favorite Teams" pickers - only the
 // leagues favoriting is offered for (see matching/sportTaxonomy.js's
-// FAVORITE_TEAM_SPORTS). Men's pro/college only, matching how those two
-// names are used colloquially - not meant to exclude WNBA/women's CBB, just
-// keeping the picker's scope to what was actually asked for.
+// FAVORITE_TEAM_SPORTS). Men's pro/college only for football/basketball,
+// matching how those two names are used colloquially - not meant to exclude
+// WNBA/women's CBB, just keeping the picker's scope to what was actually
+// asked for. Hockey/Baseball only have one top pro league each, so there's
+// no men's/women's or pro/college split to make there.
 const TEAM_LIST_LEAGUES = {
   'American Football': { sportPath: 'football', leaguePath: 'nfl' },
   NCAAF: { sportPath: 'football', leaguePath: 'college-football', query: 'limit=500' },
   NBA: { sportPath: 'basketball', leaguePath: 'nba' },
   NCAAB: { sportPath: 'basketball', leaguePath: 'mens-college-basketball', query: 'limit=500' },
+  Hockey: { sportPath: 'hockey', leaguePath: 'nhl' },
+  Baseball: { sportPath: 'baseball', leaguePath: 'mlb' },
 };
 
 const TEAM_LIST_TTL_MS = 24 * 60 * 60 * 1000; // team names/logos are effectively static

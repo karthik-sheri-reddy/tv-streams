@@ -91,6 +91,10 @@
       <div><div>Hide descriptions</div><div class="desc">Hide the description text under catalog cards.</div></div>
       <label class="switch"><input type="checkbox" id="hideDescriptions" /><span class="slider"></span></label>
     </div>
+    <div class="toggle-row">
+      <div><div>Proxy playback through this server</div><div class="desc">Route video through the addon instead of connecting straight to your IPTV server. Uses this server's bandwidth for every stream played - off unless you need it.</div></div>
+      <label class="switch"><input type="checkbox" id="proxyStreams" /><span class="slider"></span></label>
+    </div>
   </section>
 
   <section>
@@ -212,7 +216,7 @@ async function loadUpcomingWindow() {
   }
 }
 
-const FAVORITE_LEAGUES = ['American Football', 'NCAAF', 'NBA', 'NCAAB'];
+const FAVORITE_LEAGUES = ['American Football', 'NCAAF', 'NBA', 'NCAAB', 'Hockey', 'Baseball'];
 const favoriteTeams = {}; // league -> Set(team name)
 const teamListCache = {}; // league -> [{id,name,logo}] (fetched lazily on first expand)
 for (const league of FAVORITE_LEAGUES) favoriteTeams[league] = new Set();
@@ -328,6 +332,7 @@ document.getElementById('generateBtn').onclick = async () => {
     liveOnly: document.getElementById('liveOnly').checked,
     hideTitles: document.getElementById('hideTitles').checked,
     hideDescriptions: document.getElementById('hideDescriptions').checked,
+    proxyStreams: document.getElementById('proxyStreams').checked,
     sports: Array.from(selectedSports),
     timezone: document.getElementById('timezone').value,
     upcomingWindowHours: parseFloat(document.getElementById('upcomingWindow').value) || 3,
